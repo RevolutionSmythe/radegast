@@ -379,6 +379,12 @@ namespace Radegast.Rendering
         void Objects_TerseObjectUpdate(object sender, TerseObjectUpdateEventArgs e)
         {
             if (e.Simulator.Handle != Client.Network.CurrentSim.Handle) return;
+
+            if(e.Prim.ID == Client.Self.AgentID)
+                UpdateCameraClientMovement (e.Update.Position);//Update our camera with the new pos (if nessessary)
+            //If it is an avatar, we don't need to deal with the terse update stuff, unless it sends textures to us
+            if(e.Prim.PrimData.PCode == PCode.Avatar && e.Update.Textures == null)
+                return;
             UpdatePrimBlocking(e.Prim);
         }
 
@@ -710,11 +716,35 @@ namespace Radegast.Rendering
 
         #region Mouse handling
         bool dragging = false;
+        /// <summary>
+        /// The camera doesn't move when ctrl-alt has been used, so don't move it if the user moves around
+        /// </summary>
+        bool cameraLocked = false;
         int dragX, dragY, downX, downY;
 
         private void glControl_MouseWheel(object sender, MouseEventArgs e)
         {
             Camera.Position += (Camera.Position - Camera.FocalPoint) * (e.Delta / -500f);
+        }
+
+        private Vector3 lastCachedClientCameraPos = Vector3.Zero;
+        private void UpdateCameraClientMovement (Vector3 newPos)
+        {
+            if(!cameraLocked)
+            {
+                if(lastCachedClientCameraPos != Vector3.Zero)
+                {
+                    Vector3 diffPos = (newPos - lastCachedClientCameraPos);
+                    Camera.Position += diffPos;
+                    Camera.FocalPoint += diffPos;
+                    //Camera.Zoom = 1.0f;
+                    //Camera.Far = DrawDistance;
+                    Camera.EndMove ();
+                }
+                else
+                    InitCamera ();
+                lastCachedClientCameraPos = newPos;
+            }
         }
 
         SceneObject RightclickedObject;
@@ -774,15 +804,18 @@ namespace Radegast.Rendering
                     }
 
                     // Rotate camera in a vertical circle around target on up down mouse movement
-                    if (ModifierKeys == (Keys.Alt | Keys.Control))
+                    if(ModifierKeys == (Keys.Alt | Keys.Control))
                     {
+                        cameraLocked = true;
                         Camera.Position = Camera.FocalPoint +
                             (Camera.Position - Camera.FocalPoint)
-                            * Quaternion.CreateFromAxisAngle((Camera.Position - Camera.FocalPoint) % new Vector3(0f, 0f, 1f), deltaY * pixelToM);
+                            * Quaternion.CreateFromAxisAngle ((Camera.Position - Camera.FocalPoint) % new Vector3 (0f, 0f, 1f), deltaY * pixelToM);
                         var dx = -(deltaX * pixelToM);
-                        Camera.Position = Camera.FocalPoint + (Camera.Position - Camera.FocalPoint) * new Quaternion(0f, 0f, (float)Math.Sin(dx), (float)Math.Cos(dx));
+                        Camera.Position = Camera.FocalPoint + (Camera.Position - Camera.FocalPoint) * new Quaternion (0f, 0f, (float)Math.Sin (dx), (float)Math.Cos (dx));
+                        lastCachedClientCameraPos = Vector3.Zero; //Reset next time, don't use this new position for the client movement camera
                     }
-
+                    else
+                        cameraLocked = false;
                 }
 
                 dragX = e.X;
@@ -1115,8 +1148,8 @@ namespace Radegast.Rendering
 
         void InitCamera()
         {
-            Vector3 camPos = Client.Self.SimPosition + new Vector3(-2, 0, 0) * Client.Self.Movement.BodyRotation;
-            camPos.Z += 2f;
+            Vector3 camPos = Client.Self.SimPosition + new Vector3(-4, 0, 0) * Client.Self.Movement.BodyRotation;
+            camPos.Z += 2.5f;
             Camera.Position = camPos;
             Camera.FocalPoint = Client.Self.SimPosition + new Vector3(5, 0, 0) * Client.Self.Movement.BodyRotation;
             Camera.Zoom = 1.0f;
@@ -1372,7 +1405,6 @@ namespace Radegast.Rendering
                     updateAVtes(ra);
                     Avatars.Add(av.LocalID, ra);
                     ra.glavatar.morph(av);
-
                 }
             }
         }
